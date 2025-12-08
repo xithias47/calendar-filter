@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::Query,
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use icalendar::{Calendar, Component}; // Component trait might be needed for .push()
 use serde::Deserialize;
@@ -11,11 +11,13 @@ use std::str::FromStr;
 
 #[tokio::main]
 async fn main() {
-    let app = Router::new().route("/calendar.ics", get(handler));
+    let app = Router::new()
+        .route("/calendar.ics", get(handler))
+        .route("/ping", get(ping));
 
     let port = std::env::var("PORT").unwrap_or_else(|_| "3000".to_string());
     let addr = format!("0.0.0.0:{}", port);
-    
+
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
     println!("Listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, app).await.unwrap();
@@ -41,7 +43,7 @@ async fn handler(Query(params): Query<Params>) -> Result<Response, AppError> {
     let mut new_calendar = Calendar::new();
     for component in calendar.components {
         // Check if it's an event and verify TRANSP property
-        // We use string representation check as a reliable fallback since 
+        // We use string representation check as a reliable fallback since
         // icalendar crate API property access can be tricky without docs.
         // Format of TRANSP is: "TRANSP:TRANSPARENT" on a line.
         let is_free = if let icalendar::CalendarComponent::Event(event) = &component {
@@ -55,19 +57,23 @@ async fn handler(Query(params): Query<Params>) -> Result<Response, AppError> {
         };
 
         if !is_free {
-             new_calendar.push(component);
+            new_calendar.push(component);
         }
     }
 
     // Preserve PRODID checks or just let new_calendar have default.
     // The upstream usually has a PRODID, we probably want to keep it or just use ours.
     // For now, default implementation of Calendar::new() is fine.
-    
+
     Ok((
         [(axum::http::header::CONTENT_TYPE, "text/calendar")],
         new_calendar.to_string(),
     )
         .into_response())
+}
+
+async fn ping() -> &'static str {
+    "pong"
 }
 
 // Basic error handling
