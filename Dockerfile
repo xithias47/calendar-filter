@@ -1,25 +1,29 @@
 # Builder stage
-FROM rust:1-bookworm as builder
+FROM rust:1-alpine AS builder
 
 WORKDIR /usr/src/app
-COPY . .
 
-# Build the application in release mode
-RUN cargo build --release
+# Install build dependencies
+RUN apk add --no-cache musl-dev openssl-dev openssl-libs-static pkgconfig
+
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+
+# Build statically linked binary
+ENV RUSTFLAGS="-C target-feature=+crt-static"
+RUN cargo build --release --target x86_64-unknown-linux-musl
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM alpine:latest
 
-# Install OpenSSL/CA certificates required for reqwest and curl for health checks
-RUN apt-get update && apt-get install -y \
-    ca-certificates \
-    libssl-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install minimal runtime dependencies
+RUN apk add --no-cache ca-certificates curl
 
-COPY --from=builder /usr/src/app/target/release/calendar-filter /usr/local/bin/calendar-filter
+# Copy the statically linked binary
+COPY --from=builder /usr/src/app/target/x86_64-unknown-linux-musl/release/calendar-filter /usr/local/bin/calendar-filter
 
 ENV PORT=3000
 
+EXPOSE 3000
 
 CMD ["calendar-filter"]
